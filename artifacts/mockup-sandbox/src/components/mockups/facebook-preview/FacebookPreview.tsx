@@ -111,6 +111,12 @@ class PondGame {
   floatTimer = 0; floatDuration = 0;
   floatModeTimer = 0; floatInterval = 5 + Math.random() * 5;
   floatDriftVx = 0; floatDriftVy = 0;
+  floatRippleTimer = 0;
+  // Per-sound volume multipliers (set by component from sliders)
+  quackVolume = 0.15; splashVolume = 0.18;
+  // Custom audio buffers (replace procedural sounds when set)
+  customQuackBuffer: AudioBuffer | null = null;
+  customSplashBuffer: AudioBuffer | null = null;
   idleRipples: { x: number; y: number; r: number; grow: number; life: number; decay: number }[] = [];
   rippleTimer = 0; rippleInterval = 2.5;
   crumbs: { x: number; y: number; baseY: number; bobT: number; bobS: number; bobA: number; angle: number; spin: number; size: number; dead: boolean; landT: number; landed: boolean }[] = [];
@@ -157,29 +163,39 @@ class PondGame {
   }
 
   generateQuack(audioCtx: AudioContext | null) {
-    if (!audioCtx) return;
+    if (!audioCtx || this.quackVolume <= 0) return;
     try {
+      if (this.customQuackBuffer) {
+        const src = audioCtx.createBufferSource(); src.buffer = this.customQuackBuffer;
+        const g = audioCtx.createGain(); g.gain.value = this.quackVolume;
+        src.connect(g); g.connect(audioCtx.destination); src.start(); return;
+      }
       const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
       osc.connect(gain); gain.connect(audioCtx.destination); osc.type = "sawtooth";
       osc.frequency.setValueAtTime(320, audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime + 0.12);
       osc.frequency.setValueAtTime(260, audioCtx.currentTime + 0.13);
       osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + 0.24);
-      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.setValueAtTime(this.quackVolume, audioCtx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.28);
       osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     } catch (_) {}
   }
 
   generateSplash(audioCtx: AudioContext | null) {
-    if (!audioCtx) return;
+    if (!audioCtx || this.splashVolume <= 0) return;
     try {
+      if (this.customSplashBuffer) {
+        const src = audioCtx.createBufferSource(); src.buffer = this.customSplashBuffer;
+        const g = audioCtx.createGain(); g.gain.value = this.splashVolume;
+        src.connect(g); g.connect(audioCtx.destination); src.start(); return;
+      }
       const bufSize = audioCtx.sampleRate * 0.16;
       const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
       const data = buf.getChannelData(0);
       for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.3));
       const src = audioCtx.createBufferSource(); src.buffer = buf;
-      const g = audioCtx.createGain(); g.gain.setValueAtTime(0.18, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
+      const g = audioCtx.createGain(); g.gain.setValueAtTime(this.splashVolume, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.18);
       const filt = audioCtx.createBiquadFilter(); filt.type = "bandpass"; filt.frequency.value = 1200; filt.Q.value = 0.8;
       src.connect(filt); filt.connect(g); g.connect(audioCtx.destination); src.start();
     } catch (_) {}
@@ -234,10 +250,16 @@ class PondGame {
         this.floatMode = true;
         this.floatTimer = 0;
         this.floatDuration = 2.5 + Math.random() * 3;
-        // Pick a very slow random drift direction
-        const fa = Math.random() * TWO_PI;
-        this.floatDriftVx = Math.cos(fa) * 4.5;
-        this.floatDriftVy = Math.sin(fa) * 3;
+        // Horizontal drift only — duck glides left or right along the X axis
+        this.floatDriftVx = (Math.random() > 0.5 ? 1 : -1) * (3 + Math.random() * 2.5);
+        this.floatDriftVy = 0;
+        this.floatRippleTimer = 0;
+        // Spawn concentric entry ripples
+        for (let i = 0; i < 3; i++) {
+          const rp = new Particle(this.duckX, this.duckY, "ripple");
+          rp.decay = 0.007 + i * 0.003; rp.growSpeed = 20 + i * 14; rp.strokeWidth = 1.5 - i * 0.3;
+          this.particles.push(rp);
+        }
       }
 
       if (this.floatMode) {
@@ -249,9 +271,16 @@ class PondGame {
         // Gently guide velocity toward the drift direction
         this.duckVx += (this.floatDriftVx - this.duckVx) * 1.8 * dt;
         this.duckVy += (this.floatDriftVy - this.duckVy) * 1.8 * dt;
-        // tx/ty not used for steering when floating — provide safe values
         tx = this.duckX; ty = this.duckY;
         targetSpeed = 5;
+        // Periodic gentle ripples while floating
+        this.floatRippleTimer += dt;
+        if (this.floatRippleTimer >= 1.3 + Math.random() * 0.6) {
+          this.floatRippleTimer = 0;
+          const rp = new Particle(this.duckX, this.duckY, "ripple");
+          rp.decay = 0.009; rp.growSpeed = 18; rp.strokeWidth = 0.9;
+          this.particles.push(rp);
+        }
       } else {
         // Wander with slow base speed
         this.wanderTimer += dt;
@@ -433,12 +462,21 @@ export function FacebookPreview() {
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  // Looping audio nodes for music / ambient tracks
+  const musicSrcRef = useRef<AudioBufferSourceNode | null>(null);
+  const musicGainRef = useRef<GainNode | null>(null);
+  const ambientSrcRef = useRef<AudioBufferSourceNode | null>(null);
+  const ambientGainRef = useRef<GainNode | null>(null);
+  // Decoded audio buffers (so we can restart them)
+  const musicBufRef = useRef<AudioBuffer | null>(null);
+  const ambientBufRef = useRef<AudioBuffer | null>(null);
 
   const [gameVisible, setGameVisible] = useState(true);
   const [crumbHint, setCrumbHint] = useState(true);
   const [assetOpen, setAssetOpen] = useState(false);
   const [assetTab, setAssetTab] = useState<"graphics" | "audio">("graphics");
   const [customPreviews, setCustomPreviews] = useState<Record<string, string>>({});
+  const [audioUploaded, setAudioUploaded] = useState<Record<string, boolean>>({});
   const [volumes, setVolumes] = useState({ quack: 70, splash: 60, music: 50, ambient: 40, click: 50 });
   const [masterMute, setMasterMute] = useState(false);
 
@@ -481,6 +519,39 @@ export function FacebookPreview() {
     return () => cancelAnimationFrame(animRef.current);
   }, []);
 
+  // Helper: ensure AudioContext exists (needs user gesture first time)
+  const ensureAudioCtx = useCallback(() => {
+    if (!audioCtxRef.current) { try { audioCtxRef.current = new AudioContext(); } catch (_) {} }
+    return audioCtxRef.current;
+  }, []);
+
+  // Helper: start a looping audio source through a gain node
+  const startLoop = useCallback((buf: AudioBuffer, gainNode: GainNode): AudioBufferSourceNode | null => {
+    const ctx = audioCtxRef.current; if (!ctx) return null;
+    try {
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      src.connect(gainNode); gainNode.connect(ctx.destination); src.start(); return src;
+    } catch (_) { return null; }
+  }, []);
+
+  // Keep gain nodes in sync with slider values + master mute
+  useEffect(() => {
+    const v = masterMute ? 0 : volumes.music / 100 * 0.8;
+    if (musicGainRef.current) musicGainRef.current.gain.value = v;
+  }, [volumes.music, masterMute]);
+
+  useEffect(() => {
+    const v = masterMute ? 0 : volumes.ambient / 100 * 0.5;
+    if (ambientGainRef.current) ambientGainRef.current.gain.value = v;
+  }, [volumes.ambient, masterMute]);
+
+  // Sync game's per-sound volumes
+  useEffect(() => {
+    const game = gameRef.current; if (!game) return;
+    game.quackVolume = masterMute ? 0 : volumes.quack / 100 * 0.15;
+    game.splashVolume = masterMute ? 0 : volumes.splash / 100 * 0.18;
+  }, [volumes.quack, volumes.splash, masterMute]);
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current; const game = gameRef.current;
     if (!canvas || !game) return;
@@ -501,25 +572,96 @@ export function FacebookPreview() {
     reader.onload = (ev) => {
       const url = ev.target?.result as string;
       setCustomPreviews(prev => ({ ...prev, [key]: url }));
-      // Hot-swap game image
       const img = new Image(); img.src = url;
       img.onload = () => {
         const game = gameRef.current; if (!game) return;
         if (key === "duck") game.duckImg = img;
         else if (key === "pond") game.pondImg = img;
         else if (key === "breadcrumb") game.crumbImg = img;
+        else if (key === "background") {
+          // Rebuild bgPattern from uploaded image
+          const canvas = canvasRef.current; if (!canvas) return;
+          const ctx = canvas.getContext("2d");
+          if (ctx) { const p = ctx.createPattern(img, "repeat"); if (game && p) game.bgPattern = p; }
+        }
       };
     };
     reader.readAsDataURL(file);
     e.target.value = "";
   }, []);
 
+  // Decode an audio file and wire it up — SFX replace procedural sounds; music/ambient loop
+  const handleAudioUpload = useCallback((key: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const ctx = ensureAudioCtx(); if (!ctx) return;
+
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const arrayBuffer = ev.target?.result as ArrayBuffer;
+        const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
+        const game = gameRef.current;
+
+        if (key === "quack" && game) {
+          game.customQuackBuffer = decoded;
+        } else if (key === "splash" && game) {
+          game.customSplashBuffer = decoded;
+        } else if (key === "music") {
+          musicBufRef.current = decoded;
+          // Stop existing music, start new loop
+          try { musicSrcRef.current?.stop(); } catch (_) {}
+          musicSrcRef.current = null;
+          if (!musicGainRef.current) {
+            musicGainRef.current = ctx.createGain();
+            musicGainRef.current.gain.value = masterMute ? 0 : volumes.music / 100 * 0.8;
+          }
+          musicSrcRef.current = startLoop(decoded, musicGainRef.current);
+        } else if (key === "ambient") {
+          ambientBufRef.current = decoded;
+          try { ambientSrcRef.current?.stop(); } catch (_) {}
+          ambientSrcRef.current = null;
+          if (!ambientGainRef.current) {
+            ambientGainRef.current = ctx.createGain();
+            ambientGainRef.current.gain.value = masterMute ? 0 : volumes.ambient / 100 * 0.5;
+          }
+          ambientSrcRef.current = startLoop(decoded, ambientGainRef.current);
+        }
+        setAudioUploaded(prev => ({ ...prev, [key]: true }));
+      } catch (_) {}
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  }, [ensureAudioCtx, masterMute, startLoop, volumes.music, volumes.ambient]);
+
   const handleReset = useCallback((key: string) => {
     setCustomPreviews(prev => { const n = { ...prev }; delete n[key]; return n; });
-    const game = gameRef.current; if (!game) return;
-    if (key === "duck") { const i = drawDuckImg(); i.onload = () => { game.duckImg = i; }; }
-    else if (key === "pond") { const i = drawPondImg(); i.onload = () => { game.pondImg = i; }; }
-    else if (key === "breadcrumb") { const i = drawCrumbImg(); i.onload = () => { game.crumbImg = i; }; }
+    const game = gameRef.current;
+    if (key === "duck") { const i = drawDuckImg(); i.onload = () => { if (game) game.duckImg = i; }; }
+    else if (key === "pond") { const i = drawPondImg(); i.onload = () => { if (game) game.pondImg = i; }; }
+    else if (key === "breadcrumb") { const i = drawCrumbImg(); i.onload = () => { if (game) game.crumbImg = i; }; }
+    else if (key === "background") {
+      // Rebuild default grass pattern
+      const canvas = canvasRef.current; if (!canvas || !game) return;
+      const bc = document.createElement("canvas"); bc.width = 64; bc.height = 64;
+      const bctx = bc.getContext("2d")!;
+      bctx.fillStyle = "#5a9e3d"; bctx.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 30; i++) { bctx.fillStyle = i % 2 === 0 ? "#4e8e32" : "#6ab84a"; bctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 5 + Math.random() * 4); }
+      const ctx = canvas.getContext("2d"); if (ctx) game.bgPattern = ctx.createPattern(bc, "repeat");
+    } else if (key === "quack" && game) {
+      game.customQuackBuffer = null;
+      setAudioUploaded(prev => { const n = { ...prev }; delete n[key]; return n; });
+    } else if (key === "splash" && game) {
+      game.customSplashBuffer = null;
+      setAudioUploaded(prev => { const n = { ...prev }; delete n[key]; return n; });
+    } else if (key === "music") {
+      try { musicSrcRef.current?.stop(); } catch (_) {}
+      musicSrcRef.current = null; musicBufRef.current = null;
+      setAudioUploaded(prev => { const n = { ...prev }; delete n[key]; return n; });
+    } else if (key === "ambient") {
+      try { ambientSrcRef.current?.stop(); } catch (_) {}
+      ambientSrcRef.current = null; ambientBufRef.current = null;
+      setAudioUploaded(prev => { const n = { ...prev }; delete n[key]; return n; });
+    }
   }, []);
 
   return (
@@ -678,31 +820,41 @@ export function FacebookPreview() {
                                 <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${masterMute ? "left-5 bg-red-300" : "left-0.5 bg-[#a0c878]/60"}`}/>
                               </button>
                             </div>
-                            {AUDIO_SLOTS.map(slot => (
-                              <div key={slot.key} className="bg-white/5 border border-white/10 rounded-lg p-2.5">
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-sm">{slot.icon}</span>
-                                    <span className="text-xs font-semibold text-[#9ab890]">{slot.label}</span>
+                            {AUDIO_SLOTS.map(slot => {
+                              const vol = volumes[slot.key as keyof typeof volumes];
+                              const uploaded = audioUploaded[slot.key];
+                              return (
+                                <div key={slot.key} className="bg-white/5 border border-white/10 rounded-lg p-2.5">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="text-sm">{slot.icon}</span>
+                                      <span className="text-xs font-semibold text-[#9ab890]">{slot.label}</span>
+                                    </div>
+                                    {uploaded
+                                      ? <span className="text-[9px] text-[#7ddb6a]">✓ Active</span>
+                                      : <span className="text-[9px] text-[#5a7a55]">{slot.note}</span>}
                                   </div>
-                                  <span className="text-[9px] text-[#5a7a55]">{slot.note}</span>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[9px] text-[#5a7a55] w-5 text-right">{vol}</span>
+                                    <input
+                                      type="range" min={0} max={100} value={vol}
+                                      onChange={e => setVolumes(v => ({ ...v, [slot.key]: +e.target.value }))}
+                                      className="flex-1 h-1 rounded accent-[#7ddb6a] cursor-pointer"
+                                      style={{background:`linear-gradient(to right, #7ddb6a ${vol}%, rgba(255,255,255,0.12) ${vol}%)`}}
+                                    />
+                                  </div>
+                                  <div className="flex gap-1.5">
+                                    <label className="flex-1 text-center text-[10px] font-semibold bg-[#3a7d5c] hover:brightness-110 text-[#d4efb0] py-1 rounded cursor-pointer transition-all">
+                                      {uploaded ? "Replace" : "Upload"}
+                                      <input type="file" accept="audio/*" className="hidden" onChange={e => handleAudioUpload(slot.key, e)} />
+                                    </label>
+                                    {uploaded && (
+                                      <button onClick={() => handleReset(slot.key)} className="flex-1 text-[10px] font-semibold bg-white/8 hover:bg-red-900/30 text-red-300 py-1 rounded transition-colors">Reset</button>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-2 mb-2">
-                                  <span className="text-[9px] text-[#5a7a55] w-5 text-right">{volumes[slot.key as keyof typeof volumes]}</span>
-                                  <input
-                                    type="range" min={0} max={100}
-                                    value={volumes[slot.key as keyof typeof volumes]}
-                                    onChange={e => setVolumes(v => ({ ...v, [slot.key]: +e.target.value }))}
-                                    className="flex-1 h-1 rounded accent-[#7ddb6a] cursor-pointer"
-                                    style={{background:`linear-gradient(to right, #7ddb6a ${volumes[slot.key as keyof typeof volumes]}%, rgba(255,255,255,0.12) ${volumes[slot.key as keyof typeof volumes]}%)`}}
-                                  />
-                                </div>
-                                <label className="block text-center text-[10px] font-semibold bg-[#3a7d5c] hover:brightness-110 text-[#d4efb0] py-1 rounded cursor-pointer transition-all">
-                                  Upload MP3
-                                  <input type="file" accept="audio/*" className="hidden" onChange={() => {}} />
-                                </label>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
