@@ -1,6 +1,7 @@
 /**
  * duck.js
  * Duck entity with steering, bobbing, and eating animation.
+ * Movement is constrained to the X axis for a 2.5D perspective effect.
  * Exposes window.DuckPondDuck.
  */
 (function () {
@@ -16,8 +17,9 @@
 
       this.vx = 0;
       this.vy = 0;
-      this.angle = 0;
-      this.targetAngle = 0;
+
+      // 2.5D: duck faces left by default (sprite faces left)
+      this.facingRight = false;
 
       this.speed = 38;
       this.maxSpeed = 75;
@@ -43,7 +45,7 @@
       const dist = 0.15 + Math.random() * 0.6;
       this.wanderTarget = {
         x: this.pond.cx + Math.cos(angle) * this.pond.rx * dist,
-        y: this.pond.cy + Math.sin(angle) * this.pond.ry * dist,
+        y: this.pond.cy,
       };
     }
 
@@ -80,52 +82,44 @@
       }
 
       const dx = tx - this.x;
-      const dy = ty - this.y;
-      const dist = Math.hypot(dx, dy);
+      const dist = Math.abs(dx);
 
       if (dist > 2) {
         const desiredVx = (dx / dist) * targetSpeed;
-        const desiredVy = (dy / dist) * targetSpeed;
-
         const steer = 6.5;
         this.vx += (desiredVx - this.vx) * steer * dt;
-        this.vy += (desiredVy - this.vy) * steer * dt;
       } else {
         this.vx *= 0.88;
-        this.vy *= 0.88;
       }
+      this.vy = 0;
 
-      const speed = Math.hypot(this.vx, this.vy);
+      const speed = Math.abs(this.vx);
       if (speed > this.maxSpeed) {
         this.vx = (this.vx / speed) * this.maxSpeed;
-        this.vy = (this.vy / speed) * this.maxSpeed;
       }
 
       let nx = this.x + this.vx * dt;
-      let ny = this.y + this.vy * dt;
+      const ny = this.y;
 
-      const pdx = (nx - this.pond.cx) / (this.pond.rx - this.size * 0.4);
-      const pdy = (ny - this.pond.cy) / (this.pond.ry - this.size * 0.4);
-      const pDist = Math.hypot(pdx, pdy);
-      if (pDist > 1) {
-        nx = this.x;
-        ny = this.y;
+      const halfW = this.pond.rx - this.size * 0.4;
+      if (nx < this.pond.cx - halfW) {
+        nx = this.pond.cx - halfW;
         this.vx *= -0.4;
-        this.vy *= -0.4;
+        this.wanderToNewTarget();
+      } else if (nx > this.pond.cx + halfW) {
+        nx = this.pond.cx + halfW;
+        this.vx *= -0.4;
         this.wanderToNewTarget();
       }
 
       this.x = nx;
       this.y = ny;
 
-      if (speed > 4) {
-        this.targetAngle = Math.atan2(this.vy, this.vx);
+      if (this.vx > 4) {
+        this.facingRight = true;
+      } else if (this.vx < -4) {
+        this.facingRight = false;
       }
-
-      let da = this.targetAngle - this.angle;
-      while (da > Math.PI) da -= TWO_PI;
-      while (da < -Math.PI) da += TWO_PI;
-      this.angle += da * Math.min(1, 8 * dt);
 
       if (this.eating) {
         this.eatAnimTimer += dt;
@@ -162,12 +156,14 @@
         ? 1 + 0.15 * Math.sin((this.eatAnimTimer / this.eatAnimDuration) * Math.PI)
         : 1;
 
-      ctx.save();
-      ctx.translate(this.x, this.y + bob);
-      ctx.rotate(this.angle);
-
       const w = this.size * eatScale;
       const h = this.size * eatScale;
+
+      ctx.save();
+      ctx.translate(this.x, this.y + bob);
+      if (this.facingRight) {
+        ctx.scale(-1, 1);
+      }
 
       if (duckImg) {
         ctx.drawImage(duckImg, -w / 2, -h / 2, w, h);
@@ -201,7 +197,7 @@
         const p = this.eatAnimTimer / this.eatAnimDuration;
         const numLines = 5;
         for (let i = 0; i < numLines; i++) {
-          const a = (i / numLines) * TWO_PI + this.angle;
+          const a = (i / numLines) * TWO_PI;
           const r1 = this.size * 0.6;
           const r2 = r1 + 8 + Math.sin(p * Math.PI) * 6;
           ctx.save();
