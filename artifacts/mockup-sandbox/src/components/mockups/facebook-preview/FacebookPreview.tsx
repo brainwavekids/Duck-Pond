@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const TWO_PI = Math.PI * 2;
-const MAX_TILT = Math.PI / 6; // 30° max tilt, never upside-down
+const MAX_DISPLAY_TILT = Math.PI / 2.2; // ~82° max tilt per side — covers full directional range
 
 // ── Procedural asset drawers ───────────────────────────────────────────────────
 function drawDuckImg() {
@@ -96,9 +96,8 @@ class Particle {
 class PondGame {
   cx: number; cy: number; rx: number; ry: number;
   duckX: number; duckY: number; duckVx = 0; duckVy = 0;
-  // Separate facing angle (left/right) from tilt — never upside-down
-  duckFacingRight = true;
-  duckTilt = 0;            // smoothed display tilt, clamped to ±MAX_TILT
+  // Full movement angle — facing direction and tilt both derived from this
+  duckFacingAngle = 0;   // smoothed atan2(vy,vx), kept in [-π, π]
   duckBobTime = 0;
   eating = false; eatTimer = 0;
   wanderTarget = { x: 0, y: 0 }; wanderTimer = 0; wanderInterval = 3;
@@ -107,6 +106,11 @@ class PondGame {
   propActive = false; propDuration = 0; propMaxDuration = 0.28;
   propDir = { x: 1, y: 0 };
   wakeTimer = 0;
+  // Float / drift mode — duck slows to a gentle bob
+  floatMode = false;
+  floatTimer = 0; floatDuration = 0;
+  floatModeTimer = 0; floatInterval = 5 + Math.random() * 5;
+  floatDriftVx = 0; floatDriftVy = 0;
   idleRipples: { x: number; y: number; r: number; grow: number; life: number; decay: number }[] = [];
   rippleTimer = 0; rippleInterval = 2.5;
   crumbs: { x: number; y: number; baseY: number; bobT: number; bobS: number; bobA: number; angle: number; spin: number; size: number; dead: boolean; landT: number; landed: boolean }[] = [];
@@ -183,7 +187,9 @@ class PondGame {
 
   update(dt: number, audioCtx: AudioContext | null) {
     this.time += dt;
-    this.duckBobTime += 2.0 * dt;
+    // Bob speed varies: slow, deep bobs while floating — quick, shallow bobs while active
+    const bobSpeed = this.floatMode ? 1.15 : 2.0;
+    this.duckBobTime += bobSpeed * dt;
 
     // Idle water ripples
     this.rippleTimer += dt;
@@ -220,42 +226,66 @@ class PondGame {
         this.particles.push(new Particle(nearest.x, nearest.y, "ripple"));
       }
     } else {
-      // Wander with slow base speed
-      this.wanderTimer += dt;
-      if (this.wanderTimer >= this.wanderInterval) {
-        this.wanderTimer = 0; this.wanderInterval = 2.5 + Math.random() * 3;
-        this.newWanderTarget();
-      }
-      tx = this.wanderTarget.x; ty = this.wanderTarget.y;
-      if (Math.hypot(tx - this.duckX, ty - this.duckY) < 8) this.wanderTimer = this.wanderInterval;
-
-      // ── Propulsion system ───────────────────────────────────────────────────
-      this.propTimer += dt;
-      if (this.propTimer >= this.propInterval && !this.propActive) {
-        this.propTimer = 0; this.propInterval = 3 + Math.random() * 3.5;
-        this.propActive = true; this.propDuration = 0;
-        // Direction: toward current wander target
-        const pdx = tx - this.duckX; const pdy = ty - this.duckY;
-        const pl = Math.hypot(pdx, pdy) || 1;
-        this.propDir = { x: pdx / pl, y: pdy / pl };
-        // Spawn a quick wake ripple
-        this.particles.push(new Particle(this.duckX, this.duckY, "wake"));
-      }
-      if (this.propActive) {
-        this.propDuration += dt;
-        if (this.propDuration >= this.propMaxDuration) this.propActive = false;
+      // ── Float mode — enter periodically; duck drifts lazily and bobs ──────
+      this.floatModeTimer += dt;
+      if (this.floatModeTimer >= this.floatInterval && !this.floatMode && !this.propActive) {
+        this.floatModeTimer = 0;
+        this.floatInterval = 4 + Math.random() * 5;
+        this.floatMode = true;
+        this.floatTimer = 0;
+        this.floatDuration = 2.5 + Math.random() * 3;
+        // Pick a very slow random drift direction
+        const fa = Math.random() * TWO_PI;
+        this.floatDriftVx = Math.cos(fa) * 4.5;
+        this.floatDriftVy = Math.sin(fa) * 3;
       }
 
-      // Slow wander speed, boosted during propulsion
-      const propMult = this.propActive ? (3.8 * (1 - this.propDuration / this.propMaxDuration) + 1) : 1;
-      targetSpeed = 16 * propMult;
+      if (this.floatMode) {
+        this.floatTimer += dt;
+        if (this.floatTimer >= this.floatDuration) {
+          this.floatMode = false;
+          this.newWanderTarget(); // resume normal wander after floating
+        }
+        // Gently guide velocity toward the drift direction
+        this.duckVx += (this.floatDriftVx - this.duckVx) * 1.8 * dt;
+        this.duckVy += (this.floatDriftVy - this.duckVy) * 1.8 * dt;
+        // tx/ty not used for steering when floating — provide safe values
+        tx = this.duckX; ty = this.duckY;
+        targetSpeed = 5;
+      } else {
+        // Wander with slow base speed
+        this.wanderTimer += dt;
+        if (this.wanderTimer >= this.wanderInterval) {
+          this.wanderTimer = 0; this.wanderInterval = 2.5 + Math.random() * 3;
+          this.newWanderTarget();
+        }
+        tx = this.wanderTarget.x; ty = this.wanderTarget.y;
+        if (Math.hypot(tx - this.duckX, ty - this.duckY) < 8) this.wanderTimer = this.wanderInterval;
 
-      // Emit wake particles during propulsion
-      if (this.propActive) {
-        this.wakeTimer += dt;
-        if (this.wakeTimer > 0.06) {
-          this.wakeTimer = 0;
-          this.particles.push(new Particle(this.duckX - this.propDir.x * 12, this.duckY - this.propDir.y * 12, "wake"));
+        // ── Propulsion system ─────────────────────────────────────────────────
+        this.propTimer += dt;
+        if (this.propTimer >= this.propInterval && !this.propActive) {
+          this.propTimer = 0; this.propInterval = 3 + Math.random() * 3.5;
+          this.propActive = true; this.propDuration = 0;
+          const pdx = tx - this.duckX; const pdy = ty - this.duckY;
+          const pl = Math.hypot(pdx, pdy) || 1;
+          this.propDir = { x: pdx / pl, y: pdy / pl };
+          this.particles.push(new Particle(this.duckX, this.duckY, "wake"));
+        }
+        if (this.propActive) {
+          this.propDuration += dt;
+          if (this.propDuration >= this.propMaxDuration) this.propActive = false;
+        }
+
+        const propMult = this.propActive ? (3.8 * (1 - this.propDuration / this.propMaxDuration) + 1) : 1;
+        targetSpeed = 16 * propMult;
+
+        if (this.propActive) {
+          this.wakeTimer += dt;
+          if (this.wakeTimer > 0.06) {
+            this.wakeTimer = 0;
+            this.particles.push(new Particle(this.duckX - this.propDir.x * 12, this.duckY - this.propDir.y * 12, "wake"));
+          }
         }
       }
     }
@@ -280,15 +310,18 @@ class PondGame {
     }
     this.duckX = nx; this.duckY = ny;
 
-    // ── Duck facing direction — never upside-down ───────────────────────────
-    // Facing is purely left vs right based on horizontal velocity
-    if (Math.abs(this.duckVx) > 2) {
-      this.duckFacingRight = this.duckVx > 0;
+    // ── Facing angle — smoothly tracks exact movement direction ────────────
+    if (spd > 1.5) {
+      const targetAngle = Math.atan2(this.duckVy, this.duckVx);
+      let da = targetAngle - this.duckFacingAngle;
+      while (da > Math.PI) da -= TWO_PI;
+      while (da < -Math.PI) da += TWO_PI;
+      // Slower turning during float for a lazy, relaxed feel
+      const turnRate = this.floatMode ? 1.0 : 3.5;
+      this.duckFacingAngle += da * Math.min(1, turnRate * dt);
+      while (this.duckFacingAngle > Math.PI) this.duckFacingAngle -= TWO_PI;
+      while (this.duckFacingAngle < -Math.PI) this.duckFacingAngle += TWO_PI;
     }
-    // Tilt: small angle derived from vertical vs horizontal speed ratio, clamped
-    const rawTilt = spd > 2 ? Math.atan2(this.duckVy, Math.abs(this.duckVx)) * 0.45 : 0;
-    const targetTilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, rawTilt));
-    this.duckTilt += (targetTilt - this.duckTilt) * Math.min(1, 5 * dt);
 
     if (this.eating) { this.eatTimer += dt; if (this.eatTimer >= 0.45) this.eating = false; }
     this.particles.forEach(p => p.update(dt));
@@ -333,15 +366,24 @@ class PondGame {
     // Particles
     this.particles.forEach(p => p.draw(ctx));
 
-    // ── Duck — flip for left, tilt for up/down, NEVER upside-down ──────────
-    const bob = Math.sin(this.duckBobTime) * 2.5;
+    // ── Duck — faces exact direction of travel; gentle bob; never upside-down
+    const bobAmp = this.floatMode ? 4.5 : 2.5;
+    const bob = Math.sin(this.duckBobTime) * bobAmp;
     const eatScale = this.eating ? 1 + 0.15 * Math.sin((this.eatTimer / 0.45) * Math.PI) : 1;
     const ds = 40 * eatScale;
 
+    // Derive flip (left vs right) and a display tilt from the single facing angle.
+    // atan2(sinA, ±cosA) always returns values in [-π/2, π/2] — duck can never be upside-down.
+    const cosA = Math.cos(this.duckFacingAngle);
+    const sinA = Math.sin(this.duckFacingAngle);
+    const facingRight = cosA >= 0;
+    const rawLocalTilt = facingRight ? Math.atan2(sinA, cosA) : Math.atan2(sinA, -cosA);
+    const localTilt = Math.max(-MAX_DISPLAY_TILT, Math.min(MAX_DISPLAY_TILT, rawLocalTilt));
+
     ctx.save();
     ctx.translate(this.duckX, this.duckY + bob);
-    if (!this.duckFacingRight) ctx.scale(-1, 1);       // flip, not rotate
-    ctx.rotate(this.duckTilt * (this.duckFacingRight ? 1 : -1)); // compensate tilt direction
+    if (!facingRight) ctx.scale(-1, 1);
+    ctx.rotate(facingRight ? localTilt : -localTilt);
     ctx.drawImage(this.duckImg, -ds / 2, -ds / 2, ds, ds);
     ctx.restore();
 
