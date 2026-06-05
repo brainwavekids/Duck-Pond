@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
-
-// ── Standalone Duck Pond game (no chrome APIs) ────────────────────────────────
+import { useEffect, useRef, useState, useCallback } from "react";
 
 const TWO_PI = Math.PI * 2;
+const MAX_TILT = Math.PI / 6; // 30° max tilt, never upside-down
 
-// ── Procedural drawers ────────────────────────────────────────────────────────
+// ── Procedural asset drawers ───────────────────────────────────────────────────
 function drawDuckImg() {
   const c = document.createElement("canvas"); c.width = 64; c.height = 64;
   const ctx = c.getContext("2d")!;
@@ -20,7 +19,6 @@ function drawDuckImg() {
   ctx.beginPath(); ctx.ellipse(36, 52, 10, 4, -0.1, 0, TWO_PI); ctx.fill();
   const img = new Image(); img.src = c.toDataURL(); return img;
 }
-
 function drawPondImg() {
   const c = document.createElement("canvas"); c.width = 400; c.height = 260;
   const ctx = c.getContext("2d")!;
@@ -29,10 +27,9 @@ function drawPondImg() {
   ctx.fillStyle = grad;
   ctx.beginPath(); ctx.ellipse(200, 130, 190, 120, 0, 0, TWO_PI); ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = 2;
-  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(200, 130, 180 - i*30, 110 - i*18, 0, 0, TWO_PI); ctx.stroke(); }
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.ellipse(200, 130, 180 - i * 30, 110 - i * 18, 0, 0, TWO_PI); ctx.stroke(); }
   const img = new Image(); img.src = c.toDataURL(); return img;
 }
-
 function drawCrumbImg() {
   const c = document.createElement("canvas"); c.width = 20; c.height = 20;
   const ctx = c.getContext("2d")!;
@@ -40,7 +37,6 @@ function drawCrumbImg() {
   ctx.fillStyle = "#A0714F"; ctx.beginPath(); ctx.ellipse(10, 10, 6, 4, -0.3, 0, TWO_PI); ctx.fill();
   const img = new Image(); img.src = c.toDataURL(); return img;
 }
-
 function drawBgTile() {
   const c = document.createElement("canvas"); c.width = 64; c.height = 64;
   const ctx = c.getContext("2d")!;
@@ -52,44 +48,42 @@ function drawBgTile() {
   const img = new Image(); img.src = c.toDataURL(); return img;
 }
 
-// ── Particle ──────────────────────────────────────────────────────────────────
+// ── Particle ───────────────────────────────────────────────────────────────────
 class Particle {
   x: number; y: number; type: string; alpha = 1; life = 1;
-  vx = 0; vy = 0; radius = 3; maxRadius = 30; growSpeed = 60; decay = 0.02;
+  vx = 0; vy = 0; radius = 3; growSpeed = 60; decay = 0.02;
   strokeWidth = 1.5; color = "#4fc3f7"; gravity = 0;
-
   constructor(x: number, y: number, type: string) {
     this.x = x; this.y = y; this.type = type;
     if (type === "splash") {
-      this.vx = (Math.random() - 0.5) * 120; this.vy = -Math.random() * 80 - 40;
-      this.radius = Math.random() * 3 + 1.5; this.color = `hsl(${195 + Math.random()*20},80%,${60+Math.random()*20}%)`;
+      this.vx = (Math.random() - 0.5) * 100; this.vy = -Math.random() * 70 - 30;
+      this.radius = Math.random() * 3 + 1.5;
+      this.color = `hsl(${195 + Math.random() * 20},80%,${60 + Math.random() * 20}%)`;
       this.decay = 0.025 + Math.random() * 0.015; this.gravity = 120;
     } else if (type === "ripple") {
-      this.radius = 4; this.maxRadius = 40 + Math.random() * 20;
-      this.growSpeed = 60 + Math.random() * 30; this.decay = 0.018; this.strokeWidth = 2;
+      this.radius = 4; this.growSpeed = 55 + Math.random() * 25; this.decay = 0.018; this.strokeWidth = 2;
     } else if (type === "crumb_ripple") {
-      this.radius = 2; this.maxRadius = 20 + Math.random() * 10;
-      this.growSpeed = 40; this.decay = 0.022; this.strokeWidth = 1.5;
+      this.radius = 2; this.growSpeed = 38; this.decay = 0.022; this.strokeWidth = 1.5;
     } else if (type === "burst") {
-      this.vx = (Math.random() - 0.5) * 60; this.vy = (Math.random() - 0.5) * 60;
+      this.vx = (Math.random() - 0.5) * 55; this.vy = (Math.random() - 0.5) * 55;
       this.radius = Math.random() * 2 + 1; this.color = "#f5c518"; this.decay = 0.035;
+    } else if (type === "wake") {
+      this.radius = 1.5; this.growSpeed = 22; this.decay = 0.03; this.strokeWidth = 1;
     }
   }
-
   update(dt: number) {
     this.life -= this.decay; this.alpha = Math.max(0, this.life);
     if (this.type === "splash") { this.vy += this.gravity * dt; this.x += this.vx * dt; this.y += this.vy * dt; }
-    else if (this.type === "ripple" || this.type === "crumb_ripple") { this.radius += this.growSpeed * dt; }
+    else if (this.type === "ripple" || this.type === "crumb_ripple" || this.type === "wake") { this.radius += this.growSpeed * dt; }
     else if (this.type === "burst") { this.x += this.vx * dt; this.y += this.vy * dt; }
   }
-
   draw(ctx: CanvasRenderingContext2D) {
     if (this.alpha <= 0) return;
     ctx.save(); ctx.globalAlpha = this.alpha;
     if (this.type === "splash" || this.type === "burst") {
       ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, TWO_PI); ctx.fill();
     } else {
-      ctx.globalAlpha *= 0.6; ctx.strokeStyle = "rgba(255,255,255,0.7)";
+      ctx.globalAlpha *= 0.55; ctx.strokeStyle = "rgba(255,255,255,0.7)";
       ctx.lineWidth = this.strokeWidth; ctx.beginPath();
       ctx.ellipse(this.x, this.y, this.radius, this.radius * 0.45, 0, 0, TWO_PI); ctx.stroke();
     }
@@ -98,22 +92,31 @@ class Particle {
   dead() { return this.life <= 0; }
 }
 
-// ── Game state class ──────────────────────────────────────────────────────────
+// ── Game ───────────────────────────────────────────────────────────────────────
 class PondGame {
   cx: number; cy: number; rx: number; ry: number;
   duckX: number; duckY: number; duckVx = 0; duckVy = 0;
-  duckAngle = 0; duckBobTime = 0; eating = false; eatTimer = 0;
+  // Separate facing angle (left/right) from tilt — never upside-down
+  duckFacingRight = true;
+  duckTilt = 0;            // smoothed display tilt, clamped to ±MAX_TILT
+  duckBobTime = 0;
+  eating = false; eatTimer = 0;
   wanderTarget = { x: 0, y: 0 }; wanderTimer = 0; wanderInterval = 3;
-  idleRipples: { x: number; y: number; r: number; maxR: number; grow: number; life: number; decay: number }[] = [];
-  rippleSpawnTimer = 0; rippleInterval = 2.5;
+  // Propulsion system
+  propTimer = 0; propInterval = 3.5 + Math.random() * 2;
+  propActive = false; propDuration = 0; propMaxDuration = 0.28;
+  propDir = { x: 1, y: 0 };
+  wakeTimer = 0;
+  idleRipples: { x: number; y: number; r: number; grow: number; life: number; decay: number }[] = [];
+  rippleTimer = 0; rippleInterval = 2.5;
   crumbs: { x: number; y: number; baseY: number; bobT: number; bobS: number; bobA: number; angle: number; spin: number; size: number; dead: boolean; landT: number; landed: boolean }[] = [];
   particles: Particle[] = [];
   bgPattern: CanvasPattern | null = null;
   time = 0;
-  duckImg: HTMLImageElement; pondImg: HTMLImageElement; crumbImg: HTMLImageElement; bgImg: HTMLImageElement;
+  duckImg: HTMLImageElement; pondImg: HTMLImageElement; crumbImg: HTMLImageElement;
 
-  constructor(w: number, h: number, duckImg: HTMLImageElement, pondImg: HTMLImageElement, crumbImg: HTMLImageElement, bgImg: HTMLImageElement) {
-    this.duckImg = duckImg; this.pondImg = pondImg; this.crumbImg = crumbImg; this.bgImg = bgImg;
+  constructor(w: number, h: number, duckImg: HTMLImageElement, pondImg: HTMLImageElement, crumbImg: HTMLImageElement) {
+    this.duckImg = duckImg; this.pondImg = pondImg; this.crumbImg = crumbImg;
     this.rx = Math.min(w * 0.42, 240); this.ry = Math.min(h * 0.42, 150);
     this.cx = w / 2; this.cy = h / 2 + 8;
     this.duckX = this.cx; this.duckY = this.cy;
@@ -134,7 +137,7 @@ class PondGame {
     let spawned = 0; let attempts = 0;
     while (spawned < count && attempts < count * 8) {
       attempts++;
-      const a = Math.random() * TWO_PI; const spread = 24 + Math.random() * 18;
+      const a = Math.random() * TWO_PI; const spread = 22 + Math.random() * 16;
       const x = cx + Math.cos(a) * spread * Math.random();
       const y = cy + Math.sin(a) * spread * 0.55 * Math.random();
       if (this.inPond(x, y)) {
@@ -153,8 +156,7 @@ class PondGame {
     if (!audioCtx) return;
     try {
       const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
-      osc.connect(gain); gain.connect(audioCtx.destination);
-      osc.type = "sawtooth";
+      osc.connect(gain); gain.connect(audioCtx.destination); osc.type = "sawtooth";
       osc.frequency.setValueAtTime(320, audioCtx.currentTime);
       osc.frequency.exponentialRampToValueAtTime(180, audioCtx.currentTime + 0.12);
       osc.frequency.setValueAtTime(260, audioCtx.currentTime + 0.13);
@@ -181,20 +183,19 @@ class PondGame {
 
   update(dt: number, audioCtx: AudioContext | null) {
     this.time += dt;
-    this.duckBobTime += 2.2 * dt;
+    this.duckBobTime += 2.0 * dt;
 
-    // Idle ripples
-    this.rippleSpawnTimer += dt;
-    if (this.rippleSpawnTimer >= this.rippleInterval) {
-      this.rippleSpawnTimer = 0; this.rippleInterval = 2 + Math.random() * 1.8;
+    // Idle water ripples
+    this.rippleTimer += dt;
+    if (this.rippleTimer >= this.rippleInterval) {
+      this.rippleTimer = 0; this.rippleInterval = 2 + Math.random() * 2;
       const a = Math.random() * TWO_PI; const d = 0.2 + Math.random() * 0.6;
-      const x = this.cx + Math.cos(a) * this.rx * d; const y = this.cy + Math.sin(a) * this.ry * d;
-      this.idleRipples.push({ x, y, r: 2, maxR: 18 + Math.random() * 10, grow: 18 + Math.random() * 10, life: 1, decay: 0.013 + Math.random() * 0.005 });
+      this.idleRipples.push({ x: this.cx + Math.cos(a) * this.rx * d, y: this.cy + Math.sin(a) * this.ry * d, r: 2, grow: 16 + Math.random() * 8, life: 1, decay: 0.013 + Math.random() * 0.005 });
     }
     this.idleRipples.forEach(r => { r.r += r.grow * dt; r.life -= r.decay; });
     this.idleRipples = this.idleRipples.filter(r => r.life > 0);
 
-    // Crumbs
+    // Crumbs bob
     this.crumbs.forEach(c => {
       if (c.dead) return;
       c.bobT += c.bobS * dt; c.y = c.baseY + Math.sin(c.bobT) * c.bobA; c.angle += c.spin * dt;
@@ -206,8 +207,10 @@ class PondGame {
     this.crumbs.forEach(c => { if (c.dead) return; const d = Math.hypot(c.x - this.duckX, c.y - this.duckY); if (d < minD) { minD = d; nearest = c; } });
 
     let tx: number, ty: number, targetSpeed: number;
+
     if (nearest) {
-      tx = nearest.x; ty = nearest.y; targetSpeed = 75;
+      tx = nearest.x; ty = nearest.y;
+      targetSpeed = 55; // still not super fast chasing crumbs
       if (Math.hypot(tx - this.duckX, ty - this.duckY) < 10) {
         nearest.dead = true;
         this.eating = true; this.eatTimer = 0;
@@ -217,25 +220,75 @@ class PondGame {
         this.particles.push(new Particle(nearest.x, nearest.y, "ripple"));
       }
     } else {
+      // Wander with slow base speed
       this.wanderTimer += dt;
-      if (this.wanderTimer >= this.wanderInterval) { this.wanderTimer = 0; this.wanderInterval = 2.2 + Math.random() * 2.5; this.newWanderTarget(); }
-      tx = this.wanderTarget.x; ty = this.wanderTarget.y; targetSpeed = 36;
+      if (this.wanderTimer >= this.wanderInterval) {
+        this.wanderTimer = 0; this.wanderInterval = 2.5 + Math.random() * 3;
+        this.newWanderTarget();
+      }
+      tx = this.wanderTarget.x; ty = this.wanderTarget.y;
       if (Math.hypot(tx - this.duckX, ty - this.duckY) < 8) this.wanderTimer = this.wanderInterval;
+
+      // ── Propulsion system ───────────────────────────────────────────────────
+      this.propTimer += dt;
+      if (this.propTimer >= this.propInterval && !this.propActive) {
+        this.propTimer = 0; this.propInterval = 3 + Math.random() * 3.5;
+        this.propActive = true; this.propDuration = 0;
+        // Direction: toward current wander target
+        const pdx = tx - this.duckX; const pdy = ty - this.duckY;
+        const pl = Math.hypot(pdx, pdy) || 1;
+        this.propDir = { x: pdx / pl, y: pdy / pl };
+        // Spawn a quick wake ripple
+        this.particles.push(new Particle(this.duckX, this.duckY, "wake"));
+      }
+      if (this.propActive) {
+        this.propDuration += dt;
+        if (this.propDuration >= this.propMaxDuration) this.propActive = false;
+      }
+
+      // Slow wander speed, boosted during propulsion
+      const propMult = this.propActive ? (3.8 * (1 - this.propDuration / this.propMaxDuration) + 1) : 1;
+      targetSpeed = 16 * propMult;
+
+      // Emit wake particles during propulsion
+      if (this.propActive) {
+        this.wakeTimer += dt;
+        if (this.wakeTimer > 0.06) {
+          this.wakeTimer = 0;
+          this.particles.push(new Particle(this.duckX - this.propDir.x * 12, this.duckY - this.propDir.y * 12, "wake"));
+        }
+      }
     }
 
+    // Steering
     const dx = tx - this.duckX; const dy = ty - this.duckY; const dist = Math.hypot(dx, dy);
+    const steerFactor = this.propActive ? 4 : 5.5;
     if (dist > 2) {
       const dvx = (dx / dist) * targetSpeed; const dvy = (dy / dist) * targetSpeed;
-      this.duckVx += (dvx - this.duckVx) * 6.5 * dt; this.duckVy += (dvy - this.duckVy) * 6.5 * dt;
-    } else { this.duckVx *= 0.88; this.duckVy *= 0.88; }
-    const spd = Math.hypot(this.duckVx, this.duckVy);
-    if (spd > 75) { this.duckVx = (this.duckVx / spd) * 75; this.duckVy = (this.duckVy / spd) * 75; }
+      this.duckVx += (dvx - this.duckVx) * steerFactor * dt;
+      this.duckVy += (dvy - this.duckVy) * steerFactor * dt;
+    } else { this.duckVx *= 0.85; this.duckVy *= 0.85; }
 
+    const spd = Math.hypot(this.duckVx, this.duckVy);
+    const maxSpd = nearest ? 55 : (this.propActive ? 70 : 22);
+    if (spd > maxSpd) { this.duckVx = (this.duckVx / spd) * maxSpd; this.duckVy = (this.duckVy / spd) * maxSpd; }
+
+    // Move + pond boundary
     let nx = this.duckX + this.duckVx * dt; let ny = this.duckY + this.duckVy * dt;
-    if (((nx - this.cx) / (this.rx - 16)) ** 2 + ((ny - this.cy) / (this.ry - 16)) ** 2 > 1) { nx = this.duckX; ny = this.duckY; this.duckVx *= -0.4; this.duckVy *= -0.4; this.newWanderTarget(); }
+    if (((nx - this.cx) / (this.rx - 16)) ** 2 + ((ny - this.cy) / (this.ry - 16)) ** 2 > 1) {
+      nx = this.duckX; ny = this.duckY; this.duckVx *= -0.3; this.duckVy *= -0.3; this.newWanderTarget();
+    }
     this.duckX = nx; this.duckY = ny;
 
-    if (spd > 4) { let da = Math.atan2(this.duckVy, this.duckVx) - this.duckAngle; while (da > Math.PI) da -= TWO_PI; while (da < -Math.PI) da += TWO_PI; this.duckAngle += da * Math.min(1, 8 * dt); }
+    // ── Duck facing direction — never upside-down ───────────────────────────
+    // Facing is purely left vs right based on horizontal velocity
+    if (Math.abs(this.duckVx) > 2) {
+      this.duckFacingRight = this.duckVx > 0;
+    }
+    // Tilt: small angle derived from vertical vs horizontal speed ratio, clamped
+    const rawTilt = spd > 2 ? Math.atan2(this.duckVy, Math.abs(this.duckVx)) * 0.45 : 0;
+    const targetTilt = Math.max(-MAX_TILT, Math.min(MAX_TILT, rawTilt));
+    this.duckTilt += (targetTilt - this.duckTilt) * Math.min(1, 5 * dt);
 
     if (this.eating) { this.eatTimer += dt; if (this.eatTimer >= 0.45) this.eating = false; }
     this.particles.forEach(p => p.update(dt));
@@ -252,21 +305,18 @@ class PondGame {
 
     // Pond
     ctx.save();
-    const grad = ctx.createRadialGradient(this.cx - this.rx * 0.25, this.cy - this.ry * 0.25, this.ry * 0.05, this.cx, this.cy, Math.max(this.rx, this.ry));
-    grad.addColorStop(0, "rgba(100,210,255,0.18)"); grad.addColorStop(1, "rgba(0,0,0,0)");
     ctx.beginPath(); ctx.ellipse(this.cx, this.cy, this.rx, this.ry, 0, 0, TWO_PI); ctx.clip();
     ctx.drawImage(this.pondImg, this.cx - this.rx, this.cy - this.ry, this.rx * 2, this.ry * 2);
-
-    // Idle ripples in pond
+    // Idle ripples
     this.idleRipples.forEach(r => {
-      ctx.save(); ctx.globalAlpha = Math.max(0, r.life) * 0.5; ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1.2;
+      ctx.save(); ctx.globalAlpha = Math.max(0, r.life) * 0.45; ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1.1;
       ctx.beginPath(); ctx.ellipse(r.x, r.y, r.r, r.r * 0.45, 0, 0, TWO_PI); ctx.stroke(); ctx.restore();
     });
     ctx.restore();
 
     // Shore vignette
     ctx.save();
-    const sv = ctx.createRadialGradient(this.cx, this.cy, Math.max(this.rx, this.ry) * 0.85, this.cx, this.cy, Math.max(this.rx, this.ry) * 1.1);
+    const sv = ctx.createRadialGradient(this.cx, this.cy, Math.max(this.rx, this.ry) * 0.84, this.cx, this.cy, Math.max(this.rx, this.ry) * 1.1);
     sv.addColorStop(0, "rgba(0,0,0,0)"); sv.addColorStop(1, "rgba(60,110,30,0.55)");
     ctx.fillStyle = sv; ctx.beginPath(); ctx.ellipse(this.cx, this.cy, this.rx + 14, this.ry + 14, 0, 0, TWO_PI); ctx.fill(); ctx.restore();
 
@@ -283,31 +333,55 @@ class PondGame {
     // Particles
     this.particles.forEach(p => p.draw(ctx));
 
-    // Duck
+    // ── Duck — flip for left, tilt for up/down, NEVER upside-down ──────────
     const bob = Math.sin(this.duckBobTime) * 2.5;
     const eatScale = this.eating ? 1 + 0.15 * Math.sin((this.eatTimer / 0.45) * Math.PI) : 1;
-    ctx.save(); ctx.translate(this.duckX, this.duckY + bob); ctx.rotate(this.duckAngle);
     const ds = 40 * eatScale;
+
+    ctx.save();
+    ctx.translate(this.duckX, this.duckY + bob);
+    if (!this.duckFacingRight) ctx.scale(-1, 1);       // flip, not rotate
+    ctx.rotate(this.duckTilt * (this.duckFacingRight ? 1 : -1)); // compensate tilt direction
     ctx.drawImage(this.duckImg, -ds / 2, -ds / 2, ds, ds);
     ctx.restore();
 
+    // Eat burst lines
     if (this.eating) {
       const p = this.eatTimer / 0.45;
       for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * TWO_PI + this.duckAngle;
+        const a = (i / 5) * TWO_PI;
         const r1 = 22; const r2 = r1 + 8 + Math.sin(p * Math.PI) * 5;
         ctx.save(); ctx.globalAlpha = (1 - p) * 0.7; ctx.strokeStyle = "#ffe066"; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(this.duckX + Math.cos(a) * r1, this.duckY + bob + Math.sin(a) * r1); ctx.lineTo(this.duckX + Math.cos(a) * r2, this.duckY + bob + Math.sin(a) * r2); ctx.stroke(); ctx.restore();
+        ctx.beginPath();
+        ctx.moveTo(this.duckX + Math.cos(a) * r1, this.duckY + bob + Math.sin(a) * r1);
+        ctx.lineTo(this.duckX + Math.cos(a) * r2, this.duckY + bob + Math.sin(a) * r2);
+        ctx.stroke(); ctx.restore();
       }
     }
   }
 }
 
-// ── Fake Feed Posts ────────────────────────────────────────────────────────────
+// ── Fake Posts ─────────────────────────────────────────────────────────────────
 const POSTS = [
-  { name: "Sarah Johnson", handle: "sarahj", time: "2h", avatar: "SJ", color: "#e91e63", text: "Just got back from the most amazing hike! The views at sunrise were absolutely breathtaking 🌄 Nature really does heal.", likes: 142, comments: 28, shares: 11 },
-  { name: "Tech Daily", handle: "techdaily", time: "4h", avatar: "TD", color: "#1877f2", text: "🚨 BREAKING: New AI model surpasses human performance on 97% of benchmark tasks. The future is here. Read the full report →", likes: 3841, comments: 512, shares: 1203 },
-  { name: "Mike Chen", handle: "mikechen", time: "5h", avatar: "MC", color: "#ff9800", text: "Made homemade ramen from scratch for the first time ever. 6 hours later... honestly worth every minute. Recipe in comments! 🍜", likes: 87, comments: 43, shares: 19 },
+  { name: "Sarah Johnson", time: "2h", avatar: "SJ", color: "#e91e63", text: "Just got back from the most amazing hike! The views at sunrise were absolutely breathtaking 🌄 Nature really does heal.", likes: 142, comments: 28, shares: 11, hasImage: true },
+  { name: "Tech Daily", time: "4h", avatar: "TD", color: "#1877f2", text: "🚨 BREAKING: New AI model surpasses human performance on 97% of benchmark tasks. The future is here. Read the full report →", likes: 3841, comments: 512, shares: 1203, hasImage: false },
+  { name: "Mike Chen", time: "5h", avatar: "MC", color: "#ff9800", text: "Made homemade ramen from scratch for the first time ever. 6 hours later... honestly worth every minute. Recipe in comments! 🍜", likes: 87, comments: 43, shares: 19, hasImage: false },
+];
+
+// ── Asset preview items ────────────────────────────────────────────────────────
+const GRAPHIC_SLOTS = [
+  { key: "duck", label: "Duck Sprite", icon: "🦆", defaultColor: "#f5c518" },
+  { key: "pond", label: "Pond", icon: "💧", defaultColor: "#29b6f6" },
+  { key: "breadcrumb", label: "Breadcrumbs", icon: "🍞", defaultColor: "#8B5E3C" },
+  { key: "background", label: "Background", icon: "🌿", defaultColor: "#5a9e3d" },
+  { key: "title", label: "Title / Logo", icon: "🦆", defaultColor: "#2d4a22", wide: true },
+];
+const AUDIO_SLOTS = [
+  { key: "quack", label: "Duck Quack", icon: "🦆", note: "Procedural default" },
+  { key: "splash", label: "Breadcrumb Splash", icon: "💧", note: "Procedural default" },
+  { key: "music", label: "Background Music", icon: "🎵", note: "No file uploaded" },
+  { key: "ambient", label: "Ambient SFX", icon: "🌿", note: "No file uploaded" },
+  { key: "click", label: "Button Click", icon: "🖱️", note: "No file uploaded" },
 ];
 
 // ── Main Component ─────────────────────────────────────────────────────────────
@@ -317,34 +391,37 @@ export function FacebookPreview() {
   const animRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
   const [gameVisible, setGameVisible] = useState(true);
   const [crumbHint, setCrumbHint] = useState(true);
+  const [assetOpen, setAssetOpen] = useState(false);
+  const [assetTab, setAssetTab] = useState<"graphics" | "audio">("graphics");
+  const [customPreviews, setCustomPreviews] = useState<Record<string, string>>({});
+  const [volumes, setVolumes] = useState({ quack: 70, splash: 60, music: 50, ambient: 40, click: 50 });
+  const [masterMute, setMasterMute] = useState(false);
 
+  // Build game
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const duckImg = drawDuckImg();
     const pondImg = drawPondImg();
     const crumbImg = drawCrumbImg();
-    const bgImg = drawBgTile();
-
     let game: PondGame;
 
     const initGame = () => {
-      const w = canvas.clientWidth; const h = 320;
+      const w = canvas.clientWidth; const h = 340;
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d")!;
-      game = new PondGame(w, h, duckImg, pondImg, crumbImg, bgImg);
+      game = new PondGame(w, h, duckImg, pondImg, crumbImg);
       try {
-        const bgC = document.createElement("canvas"); bgC.width = 64; bgC.height = 64;
-        const bc = bgC.getContext("2d")!;
-        bc.fillStyle = "#5a9e3d"; bc.fillRect(0, 0, 64, 64);
-        for (let i = 0; i < 30; i++) { bc.fillStyle = i % 2 === 0 ? "#4e8e32" : "#6ab84a"; bc.fillRect(Math.random() * 64, Math.random() * 64, 2, 5 + Math.random() * 4); }
-        game.bgPattern = ctx.createPattern(bgC, "repeat");
+        const bc = document.createElement("canvas"); bc.width = 64; bc.height = 64;
+        const bctx = bc.getContext("2d")!;
+        bctx.fillStyle = "#5a9e3d"; bctx.fillRect(0, 0, 64, 64);
+        for (let i = 0; i < 30; i++) { bctx.fillStyle = i % 2 === 0 ? "#4e8e32" : "#6ab84a"; bctx.fillRect(Math.random() * 64, Math.random() * 64, 2, 5 + Math.random() * 4); }
+        game.bgPattern = ctx.createPattern(bc, "repeat");
       } catch (_) {}
       gameRef.current = game;
-
       lastTimeRef.current = performance.now();
       const loop = (now: number) => {
         const dt = Math.min((now - lastTimeRef.current) / 1000, 0.05);
@@ -356,84 +433,95 @@ export function FacebookPreview() {
       animRef.current = requestAnimationFrame(loop);
     };
 
-    // Wait for images
     let loaded = 0;
     const onLoad = () => { loaded++; if (loaded >= 3) initGame(); };
     duckImg.onload = onLoad; pondImg.onload = onLoad; crumbImg.onload = onLoad;
-    bgImg.onload = () => {};
-
     return () => cancelAnimationFrame(animRef.current);
   }, []);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const game = gameRef.current;
+    const canvas = canvasRef.current; const game = gameRef.current;
     if (!canvas || !game) return;
     const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const scaleX = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scaleX;
+    const y = (e.clientY - rect.top) * scaleX;
     if (!game.inPond(x, y)) return;
-
-    // Init audio on first interaction
-    if (!audioCtxRef.current) {
-      try { audioCtxRef.current = new AudioContext(); } catch (_) {}
-    }
+    if (!audioCtxRef.current) { try { audioCtxRef.current = new AudioContext(); } catch (_) {} }
     game.generateSplash(audioCtxRef.current);
     game.spawnCrumbs(x, y);
     setCrumbHint(false);
   };
 
+  const handleImageUpload = useCallback((key: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const url = ev.target?.result as string;
+      setCustomPreviews(prev => ({ ...prev, [key]: url }));
+      // Hot-swap game image
+      const img = new Image(); img.src = url;
+      img.onload = () => {
+        const game = gameRef.current; if (!game) return;
+        if (key === "duck") game.duckImg = img;
+        else if (key === "pond") game.pondImg = img;
+        else if (key === "breadcrumb") game.crumbImg = img;
+      };
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }, []);
+
+  const handleReset = useCallback((key: string) => {
+    setCustomPreviews(prev => { const n = { ...prev }; delete n[key]; return n; });
+    const game = gameRef.current; if (!game) return;
+    if (key === "duck") { const i = drawDuckImg(); i.onload = () => { game.duckImg = i; }; }
+    else if (key === "pond") { const i = drawPondImg(); i.onload = () => { game.pondImg = i; }; }
+    else if (key === "breadcrumb") { const i = drawCrumbImg(); i.onload = () => { game.crumbImg = i; }; }
+  }, []);
+
   return (
     <div className="min-h-screen bg-[#f0f2f5]">
-      {/* ── Nav bar ── */}
+      {/* ── Nav ── */}
       <nav className="fixed top-0 left-0 right-0 h-14 bg-white shadow-sm z-50 flex items-center justify-between px-4">
-        {/* Left: Logo + Search */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2">
           <div className="text-[#1877f2] font-bold text-3xl leading-none">f</div>
-          <div className="flex items-center bg-[#f0f2f5] rounded-full px-3 py-2 gap-2 w-48 hidden sm:flex">
-            <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd"/></svg>
+          <div className="flex items-center bg-[#f0f2f5] rounded-full px-3 py-2 gap-2 w-44 hidden sm:flex">
+            <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd"/></svg>
             <span className="text-sm text-gray-400">Search Facebook</span>
           </div>
         </div>
-        {/* Center: Nav icons */}
         <div className="flex items-center gap-1">
           {["🏠","🎬","👥","🎮","🛍️"].map((icon, i) => (
             <button key={i} className={`px-5 py-3 rounded-lg text-xl ${i === 0 ? "border-b-2 border-[#1877f2] text-[#1877f2]" : "text-gray-500 hover:bg-[#f0f2f5]"}`}>{icon}</button>
           ))}
         </div>
-        {/* Right: Profile */}
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-full bg-[#f0f2f5] flex items-center justify-center text-sm font-bold text-gray-700">JD</div>
-        </div>
+        <div className="w-9 h-9 rounded-full bg-[#f0f2f5] flex items-center justify-center text-sm font-bold text-gray-700">JD</div>
       </nav>
 
-      {/* ── Main layout ── */}
+      {/* ── Layout ── */}
       <div className="pt-14 flex max-w-[1100px] mx-auto gap-4 px-4">
-        {/* Left sidebar */}
-        <aside className="w-[280px] flex-shrink-0 py-4 hidden lg:block">
+        {/* Sidebar */}
+        <aside className="w-[260px] flex-shrink-0 py-4 hidden lg:block">
           <div className="sticky top-16">
             {[["👤","John Doe"],["👥","Friends"],["📅","Events"],["📰","Feed"],["📺","Watch"],["🛒","Marketplace"],["📋","Groups"]].map(([icon, label]) => (
-              <button key={label as string} className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-[#e4e6ea] text-gray-800 font-medium text-sm">
-                <span className="text-xl">{icon}</span>{label}
-              </button>
+              <button key={label as string} className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-[#e4e6ea] text-gray-800 font-medium text-sm">{icon}<span>{label}</span></button>
             ))}
             <hr className="my-2 border-gray-200"/>
             <p className="text-xs text-gray-400 px-3 py-1">Shortcuts</p>
             {[["🦆","Duck Fan Club"],["⚽","Weekend FC"],["🎮","Gaming Lounge"]].map(([icon, label]) => (
-              <button key={label as string} className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-[#e4e6ea] text-gray-700 text-sm">
-                <span className="text-lg">{icon}</span>{label}
-              </button>
+              <button key={label as string} className="flex items-center gap-3 w-full px-3 py-2 rounded-lg hover:bg-[#e4e6ea] text-gray-700 text-sm">{icon}<span>{label}</span></button>
             ))}
           </div>
         </aside>
 
-        {/* ── Feed column ── */}
+        {/* ── Feed ── */}
         <main className="flex-1 py-4 min-w-0">
-          {/* Stories row */}
+          {/* Stories */}
           <div className="bg-white rounded-xl shadow-sm p-3 mb-3">
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {[{icon:"➕", name:"Create Story", bg:"#f0f2f5", fg:"#1877f2"},{icon:"🌅",name:"Sarah J.",bg:"#e91e63",fg:"white"},{icon:"🎵",name:"Mike C.",bg:"#ff9800",fg:"white"},{icon:"🐶",name:"Tech D.",bg:"#1877f2",fg:"white"}].map(s => (
-                <div key={s.name} className="flex-shrink-0 w-24 h-36 rounded-xl overflow-hidden cursor-pointer relative" style={{background:s.bg}}>
+              {[{icon:"➕",name:"Add Story",bg:"#f0f2f5",fg:"#1877f2"},{icon:"🌅",name:"Sarah J.",bg:"#e91e63",fg:"white"},{icon:"🎵",name:"Mike C.",bg:"#ff9800",fg:"white"},{icon:"🐶",name:"Alex L.",bg:"#1877f2",fg:"white"}].map(s => (
+                <div key={s.name} className="flex-shrink-0 w-24 h-32 rounded-xl overflow-hidden cursor-pointer relative" style={{background:s.bg}}>
                   <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
                     <span className="text-2xl">{s.icon}</span>
                     <span className="text-xs font-semibold" style={{color:s.fg}}>{s.name}</span>
@@ -443,53 +531,160 @@ export function FacebookPreview() {
             </div>
           </div>
 
-          {/* ── Duck Pond Overlay ── */}
+          {/* ── Duck Pond overlay ── */}
           <div className="bg-[#2d4a22] rounded-xl shadow-md overflow-hidden mb-3">
             {/* Title bar */}
             <div className="flex items-center justify-between px-4 py-2 bg-black/20">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-lg">🦆</span>
                 <span className="text-[#d4efb0] font-semibold text-sm">Duck Pond</span>
                 <span className="text-xs text-[#a0c878] bg-black/20 px-2 py-0.5 rounded-full">Extension Active</span>
               </div>
-              <button
-                onClick={() => setGameVisible(v => !v)}
-                className="text-xs bg-white/10 hover:bg-white/20 border border-white/20 text-[#c8e6a0] px-3 py-1 rounded-md transition-colors"
-              >
-                {gameVisible ? "Hide" : "Show"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAssetOpen(o => !o)}
+                  className={`text-xs px-3 py-1 rounded-md border transition-colors font-medium ${assetOpen ? "bg-[#5a9e3d] border-[#7ddb6a] text-white" : "bg-white/10 hover:bg-white/20 border-white/20 text-[#c8e6a0]"}`}
+                >
+                  🎨 Assets
+                </button>
+                <button
+                  onClick={() => setGameVisible(v => !v)}
+                  className="text-xs bg-white/10 hover:bg-white/20 border border-white/20 text-[#c8e6a0] px-3 py-1 rounded-md transition-colors"
+                >
+                  {gameVisible ? "Hide" : "Show"}
+                </button>
+              </div>
             </div>
 
             {gameVisible && (
               <div className="relative">
+                {/* Game canvas */}
                 <canvas
                   ref={canvasRef}
-                  style={{ display: "block", width: "100%", height: 320, cursor: "crosshair" }}
+                  style={{ display: "block", width: "100%", height: 340, cursor: "crosshair" }}
                   onClick={handleCanvasClick}
                 />
                 {crumbHint && (
-                  <div className="absolute bottom-3 right-4 text-white/50 text-xs pointer-events-none">
+                  <div className="absolute bottom-3 right-4 text-white/45 text-xs pointer-events-none select-none">
                     Click the pond to toss breadcrumbs 🍞
+                  </div>
+                )}
+
+                {/* ── Asset Manager Drawer ── */}
+                {assetOpen && (
+                  <div className="absolute inset-0 flex">
+                    {/* Click-away overlay (left side) */}
+                    <div className="flex-1" onClick={() => setAssetOpen(false)} />
+                    {/* Panel */}
+                    <div className="w-80 bg-[#1b3a2e] overflow-y-auto flex flex-col" style={{boxShadow:"-4px 0 20px rgba(0,0,0,0.5)"}}>
+                      {/* Panel header */}
+                      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between bg-black/20">
+                        <div className="flex items-center gap-2">
+                          <span>🦆</span>
+                          <span className="text-[#b8e89a] font-bold text-sm">Asset Manager</span>
+                        </div>
+                        <button onClick={() => setAssetOpen(false)} className="text-[#a0c878] hover:text-white text-lg leading-none">×</button>
+                      </div>
+
+                      {/* Tabs */}
+                      <div className="flex border-b border-white/10">
+                        {(["graphics", "audio"] as const).map(tab => (
+                          <button key={tab} onClick={() => setAssetTab(tab)}
+                            className={`flex-1 py-2.5 text-xs font-semibold capitalize transition-colors ${assetTab === tab ? "text-[#7ddb6a] border-b-2 border-[#7ddb6a]" : "text-[#6a9060] hover:text-[#a0c878]"}`}>
+                            {tab === "graphics" ? "🖼️ Graphics" : "🎵 Audio"}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex-1 p-3 overflow-y-auto">
+                        {assetTab === "graphics" && (
+                          <div className="grid grid-cols-2 gap-2">
+                            {GRAPHIC_SLOTS.map(slot => (
+                              <div key={slot.key} className={`bg-white/5 border border-white/10 rounded-lg p-2.5 flex flex-col items-center gap-2 ${slot.wide ? "col-span-2" : ""}`}>
+                                <div className="text-[10px] font-bold text-[#9ab890] uppercase tracking-wider self-start">{slot.label}</div>
+                                <div className="w-14 h-14 rounded-lg overflow-hidden bg-black/25 flex items-center justify-center border border-white/10">
+                                  {customPreviews[slot.key]
+                                    ? <img src={customPreviews[slot.key]} className="w-full h-full object-contain" alt={slot.label} />
+                                    : <span className="text-xl">{slot.icon}</span>}
+                                </div>
+                                <div className="flex gap-1.5 w-full">
+                                  <label className="flex-1 text-center text-[10px] font-semibold bg-[#3a7d5c] hover:brightness-110 text-[#d4efb0] py-1 rounded cursor-pointer transition-all">
+                                    Upload
+                                    <input type="file" accept="image/*" className="hidden" onChange={e => handleImageUpload(slot.key, e)} />
+                                  </label>
+                                  {customPreviews[slot.key] && (
+                                    <button onClick={() => handleReset(slot.key)} className="flex-1 text-[10px] font-semibold bg-white/8 hover:bg-red-900/30 text-red-300 py-1 rounded transition-colors">Reset</button>
+                                  )}
+                                </div>
+                                {customPreviews[slot.key] && (
+                                  <div className="text-[9px] text-[#7ddb6a] w-full text-center">✓ Custom active</div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {assetTab === "audio" && (
+                          <div className="space-y-2">
+                            {/* Master mute */}
+                            <div className="bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 flex items-center justify-between mb-3">
+                              <span className="text-xs font-semibold text-[#b8e89a]">🔇 Master Mute</span>
+                              <button
+                                onClick={() => setMasterMute(m => !m)}
+                                className={`w-10 h-5 rounded-full relative transition-colors ${masterMute ? "bg-red-600" : "bg-white/15"}`}
+                              >
+                                <div className={`absolute top-0.5 w-4 h-4 rounded-full transition-all ${masterMute ? "left-5 bg-red-300" : "left-0.5 bg-[#a0c878]/60"}`}/>
+                              </button>
+                            </div>
+                            {AUDIO_SLOTS.map(slot => (
+                              <div key={slot.key} className="bg-white/5 border border-white/10 rounded-lg p-2.5">
+                                <div className="flex items-center justify-between mb-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-sm">{slot.icon}</span>
+                                    <span className="text-xs font-semibold text-[#9ab890]">{slot.label}</span>
+                                  </div>
+                                  <span className="text-[9px] text-[#5a7a55]">{slot.note}</span>
+                                </div>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-[9px] text-[#5a7a55] w-5 text-right">{volumes[slot.key as keyof typeof volumes]}</span>
+                                  <input
+                                    type="range" min={0} max={100}
+                                    value={volumes[slot.key as keyof typeof volumes]}
+                                    onChange={e => setVolumes(v => ({ ...v, [slot.key]: +e.target.value }))}
+                                    className="flex-1 h-1 rounded accent-[#7ddb6a] cursor-pointer"
+                                    style={{background:`linear-gradient(to right, #7ddb6a ${volumes[slot.key as keyof typeof volumes]}%, rgba(255,255,255,0.12) ${volumes[slot.key as keyof typeof volumes]}%)`}}
+                                  />
+                                </div>
+                                <label className="block text-center text-[10px] font-semibold bg-[#3a7d5c] hover:brightness-110 text-[#d4efb0] py-1 rounded cursor-pointer transition-all">
+                                  Upload MP3
+                                  <input type="file" accept="audio/*" className="hidden" onChange={() => {}} />
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="px-3 py-2 border-t border-white/8 text-[9px] text-[#4a6a44] text-center">
+                        In the real extension, assets are saved to browser storage
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* What's on your mind */}
+          {/* Composer */}
           <div className="bg-white rounded-xl shadow-sm p-3 mb-3">
             <div className="flex items-center gap-2">
               <div className="w-9 h-9 rounded-full bg-[#e4e6ea] flex items-center justify-center text-sm font-bold">JD</div>
-              <div className="flex-1 bg-[#f0f2f5] rounded-full px-4 py-2 text-sm text-gray-400 cursor-pointer hover:bg-[#e4e6ea]">
-                What's on your mind, John?
-              </div>
+              <div className="flex-1 bg-[#f0f2f5] rounded-full px-4 py-2 text-sm text-gray-400 cursor-pointer hover:bg-[#e4e6ea]">What's on your mind, John?</div>
             </div>
             <hr className="my-2 border-gray-200"/>
             <div className="flex justify-around">
               {[["🎥","Live video"],["📷","Photo/video"],["😊","Feeling"]].map(([icon, label]) => (
-                <button key={label as string} className="flex items-center gap-1 text-sm text-gray-600 font-medium px-3 py-1 rounded-lg hover:bg-[#f0f2f5]">
-                  <span>{icon}</span>{label}
-                </button>
+                <button key={label as string} className="flex items-center gap-1 text-sm text-gray-600 font-medium px-3 py-1 rounded-lg hover:bg-[#f0f2f5]">{icon} {label}</button>
               ))}
             </div>
           </div>
@@ -499,16 +694,12 @@ export function FacebookPreview() {
             <div key={i} className="bg-white rounded-xl shadow-sm mb-3 overflow-hidden">
               <div className="p-3">
                 <div className="flex items-start gap-2 mb-2">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{background: post.color}}>{post.avatar}</div>
-                  <div>
-                    <div className="font-semibold text-gray-900 text-sm">{post.name}</div>
-                    <div className="text-xs text-gray-500">{post.time} ago · 🌐</div>
-                  </div>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0" style={{background:post.color}}>{post.avatar}</div>
+                  <div><div className="font-semibold text-gray-900 text-sm">{post.name}</div><div className="text-xs text-gray-500">{post.time} · 🌐</div></div>
                 </div>
                 <p className="text-sm text-gray-800 mb-2">{post.text}</p>
               </div>
-              {/* Fake image placeholder for first post */}
-              {i === 0 && <div className="h-48 bg-gradient-to-br from-orange-200 via-sky-200 to-purple-200 flex items-center justify-center text-4xl">🏔️</div>}
+              {post.hasImage && <div className="h-44 bg-gradient-to-br from-orange-100 via-sky-100 to-purple-100 flex items-center justify-center text-5xl">🏔️</div>}
               <div className="px-3 py-1 border-t border-gray-100">
                 <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
                   <span>👍❤️😮 {post.likes.toLocaleString()}</span>
@@ -516,9 +707,7 @@ export function FacebookPreview() {
                 </div>
                 <div className="flex justify-around border-t border-gray-100 pt-1">
                   {[["👍","Like"],["💬","Comment"],["↗️","Share"]].map(([icon, label]) => (
-                    <button key={label as string} className="flex items-center gap-1 text-sm text-gray-600 font-medium px-4 py-1 rounded-lg hover:bg-[#f0f2f5]">
-                      <span>{icon}</span>{label}
-                    </button>
+                    <button key={label as string} className="flex items-center gap-1 text-sm text-gray-600 font-medium px-4 py-1 rounded-lg hover:bg-[#f0f2f5]">{icon} {label}</button>
                   ))}
                 </div>
               </div>
@@ -527,14 +716,14 @@ export function FacebookPreview() {
         </main>
 
         {/* Right sidebar */}
-        <aside className="w-[280px] flex-shrink-0 py-4 hidden xl:block">
+        <aside className="w-[260px] flex-shrink-0 py-4 hidden xl:block">
           <div className="sticky top-16">
             <div className="mb-4">
               <div className="font-semibold text-gray-600 text-sm mb-2">Sponsored</div>
               <div className="bg-white rounded-xl shadow-sm p-3">
-                <div className="h-24 bg-gradient-to-br from-green-200 to-teal-200 rounded-lg mb-2 flex items-center justify-center text-3xl">🦆</div>
+                <div className="h-20 bg-gradient-to-br from-green-200 to-teal-200 rounded-lg mb-2 flex items-center justify-center text-3xl">🦆</div>
                 <div className="font-semibold text-sm text-gray-900">Duck Pond Extension</div>
-                <div className="text-xs text-gray-500">duckpond.app</div>
+                <div className="text-xs text-gray-500">duckpond.app · Sponsored</div>
                 <div className="text-xs text-gray-600 mt-1">Escape the feed. Relax with your duck.</div>
               </div>
             </div>
