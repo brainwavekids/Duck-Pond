@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Duck Pond</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-icon">🦆</div>
+    <div class="header-text">
+      <h1>Duck Pond</h1>
+      <p>Your peaceful Facebook alternative</p>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="graphics">
+      🖼️ Graphics
+    </button>
+    <button class="tab-btn" data-tab="audio">
+      🎵 Audio
+    </button>
+  </div>
+
+  <!-- ── Graphics Tab ───────────────────────────────────────────────── -->
+  <div id="panel-graphics" class="tab-panel active">
+    <div class="asset-grid">
+
+      <div class="asset-slot">
+        <div class="asset-label">Duck</div>
+        <img class="asset-preview" id="prev-duck" alt="duck" />
+        <div class="btn-row">
+          <button class="btn btn-upload" data-asset="duck">Upload</button>
+          <button class="btn btn-reset" data-reset="duck">Reset</button>
+        </div>
+      </div>
+
+      <div class="asset-slot">
+        <div class="asset-label">Pond</div>
+        <img class="asset-preview" id="prev-pond" alt="pond" />
+        <div class="btn-row">
+          <button class="btn btn-upload" data-asset="pond">Upload</button>
+          <button class="btn btn-reset" data-reset="pond">Reset</button>
+        </div>
+      </div>
+
+      <div class="asset-slot">
+        <div class="asset-label">Breadcrumbs</div>
+        <img class="asset-preview" id="prev-breadcrumb" alt="breadcrumb" />
+        <div class="btn-row">
+          <button class="btn btn-upload" data-asset="breadcrumb">Upload</button>
+          <button class="btn btn-reset" data-reset="breadcrumb">Reset</button>
+        </div>
+      </div>
+
+      <div class="asset-slot">
+        <div class="asset-label">Background</div>
+        <img class="asset-preview" id="prev-background" alt="background" />
+        <div class="btn-row">
+          <button class="btn btn-upload" data-asset="background">Upload</button>
+          <button class="btn btn-reset" data-reset="background">Reset</button>
+        </div>
+      </div>
+
+      <div class="asset-slot wide">
+        <div class="asset-label">Title / Logo</div>
+        <img class="asset-preview wide-preview" id="prev-title" alt="title" />
+        <div class="btn-row">
+          <button class="btn btn-upload" data-asset="title">Upload</button>
+          <button class="btn btn-reset" data-reset="title">Reset</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Audio Tab ──────────────────────────────────────────────────── -->
+  <div id="panel-audio" class="tab-panel">
+
+    <div class="master-mute-row">
+      <div class="master-mute-label">🔇 Master Mute</div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="master-mute" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <!-- Background Music -->
+    <div class="audio-slot">
+      <div class="audio-slot-header">
+        <div class="audio-slot-label">
+          <span class="audio-slot-icon">🎵</span>
+          Background Music
+        </div>
+        <div class="audio-filename" id="fname-music">No custom file</div>
+      </div>
+      <div class="volume-row">
+        <div class="volume-label">Vol</div>
+        <input type="range" class="volume-slider" id="vol-music" min="0" max="100" value="50" data-vol="music" />
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-upload" data-asset="music">Upload MP3</button>
+        <button class="btn btn-reset" data-reset="music">Reset</button>
+      </div>
+    </div>
+
+    <!-- Ambient SFX -->
+    <div class="audio-slot">
+      <div class="audio-slot-header">
+        <div class="audio-slot-label">
+          <span class="audio-slot-icon">🌿</span>
+          Ambient SFX
+        </div>
+        <div class="audio-filename" id="fname-ambient">No custom file</div>
+      </div>
+      <div class="volume-row">
+        <div class="volume-label">Vol</div>
+        <input type="range" class="volume-slider" id="vol-ambient" min="0" max="100" value="40" data-vol="ambient" />
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-upload" data-asset="ambient">Upload MP3</button>
+        <button class="btn btn-reset" data-reset="ambient">Reset</button>
+      </div>
+    </div>
+
+    <!-- Duck Quack -->
+    <div class="audio-slot">
+      <div class="audio-slot-header">
+        <div class="audio-slot-label">
+          <span class="audio-slot-icon">🦆</span>
+          Duck Quack
+        </div>
+        <div class="audio-filename" id="fname-quack">Procedural default</div>
+      </div>
+      <div class="volume-row">
+        <div class="volume-label">Vol</div>
+        <input type="range" class="volume-slider" id="vol-quack" min="0" max="100" value="70" data-vol="quack" />
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-upload" data-asset="quack">Upload MP3</button>
+        <button class="btn btn-reset" data-reset="quack">Reset</button>
+      </div>
+    </div>
+
+    <!-- Breadcrumb Splash -->
+    <div class="audio-slot">
+      <div class="audio-slot-header">
+        <div class="audio-slot-label">
+          <span class="audio-slot-icon">💧</span>
+          Breadcrumb Splash
+        </div>
+        <div class="audio-filename" id="fname-splash">Procedural default</div>
+      </div>
+      <div class="volume-row">
+        <div class="volume-label">Vol</div>
+        <input type="range" class="volume-slider" id="vol-splash" min="0" max="100" value="60" data-vol="splash" />
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-upload" data-asset="splash">Upload MP3</button>
+        <button class="btn btn-reset" data-reset="splash">Reset</button>
+      </div>
+    </div>
+
+    <!-- Button Click SFX -->
+    <div class="audio-slot">
+      <div class="audio-slot-header">
+        <div class="audio-slot-label">
+          <span class="audio-slot-icon">🖱️</span>
+          Button Click SFX
+        </div>
+        <div class="audio-filename" id="fname-click">No custom file</div>
+      </div>
+      <div class="volume-row">
+        <div class="volume-label">Vol</div>
+        <input type="range" class="volume-slider" id="vol-click" min="0" max="100" value="50" data-vol="click" />
+      </div>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="btn btn-upload" data-asset="click">Upload MP3</button>
+        <button class="btn btn-reset" data-reset="click">Reset</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="status-toast" id="status-toast">Saved!</div>
+
+  <input type="file" id="file-input-image" accept="image/*" />
+  <input type="file" id="file-input-audio" accept="audio/*" />
+
+  <script src="popup.js"></script>
+</body>
+</html>

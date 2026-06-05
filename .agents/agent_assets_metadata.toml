@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "qofkEgyY8cC-_A5Wkpj7-"
+uri = "file://duck-pond-extension.tar.gz"
+type = "unspecified"
+title = "Duck Pond Extension (.tar.gz)"

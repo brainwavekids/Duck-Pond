@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Duck Pond",
+  "version": "1.0.0",
+  "description": "Replace your Facebook News Feed with a relaxing duck pond mini-game.",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Duck Pond"
+  },
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.facebook.com/*"],
+      "js": [
+        "game/assetLoader.js",
+        "game/particles.js",
+        "game/pond.js",
+        "game/duck.js",
+        "game/breadcrumb.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

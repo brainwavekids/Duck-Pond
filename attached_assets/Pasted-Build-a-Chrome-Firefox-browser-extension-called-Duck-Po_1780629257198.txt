@@ -1,0 +1,140 @@
+Build a Chrome/Firefox browser extension called "Duck Pond" that blocks the Facebook News Feed and replaces it with an interactive mini-game. Build the full extension — all files — ready to load unpacked in Chrome or Firefox.
+
+---
+
+## CORE FUNCTIONALITY
+
+**Facebook Blocker:**
+- Detect when the user is on facebook.com and hide/replace the News Feed element (the [role="feed"] div or #feed_jewel area)
+- Inject the Duck Pond game as a full-width overlay in place of the feed
+- Leave the rest of Facebook (nav, sidebar, Messenger) intact
+
+---
+
+## THE DUCK POND MINI-GAME
+
+Build a top-down 2D canvas game rendered in an injected <canvas> element.
+
+**Pond:**
+- Oval/circular pond centered on the canvas with a water ripple idle animation
+- Soft animated background (grass texture surrounding the pond)
+
+**Duck:**
+- A duck sprite that floats and bobs gently on the pond
+- Idle state: slowly drifts around the pond in random directions with a subtle rotation
+- When breadcrumbs are present: pathfinds toward the nearest crumb using simple steering behavior
+- On reaching a crumb: plays a quack SFX, removes the crumb, and shows a small eating animation
+- The duck should face the direction it is moving (flip/rotate sprite accordingly)
+
+**Breadcrumbs:**
+- User clicks anywhere on the pond to scatter 3–5 breadcrumb sprites at slightly randomized positions around the click
+- Breadcrumbs float on the water with a gentle bob animation
+- Disappear when eaten by the duck
+
+**Animations and Polish:**
+- Water ripple effect that emanates from where breadcrumbs land
+- Small splash particles when the duck eats a crumb
+- Smooth delta-time based animation loop using requestAnimationFrame
+
+---
+
+## ASSET MANAGER (EXTENSION POPUP)
+
+Build the extension popup (popup.html) as a tabbed Asset Manager UI with two tabs:
+
+### Tab 1 — Graphics
+
+A grid of asset slots, each with a label, preview thumbnail, and an "Upload" button:
+- Pond — replaces the pond graphic
+- Duck — replaces the duck sprite (support a spritesheet or single image)
+- Breadcrumbs — replaces the breadcrumb graphic
+- Title / Logo — replaces the "Duck Pond" title shown above the game
+- Background — replaces the grass/background area surrounding the pond
+
+Each uploaded image is stored via chrome.storage.local as a base64 data URL.
+Include a "Reset to Default" button per asset.
+
+### Tab 2 — Audio
+
+Upload slots with label, filename display, and an upload button for:
+- Background Music — looping ambient music track
+- Ambient SFX — looping nature sounds (birds, water)
+- Duck Quack — plays on eating a crumb
+- Breadcrumb Splash — plays when crumbs land on water
+- Button Click SFX — UI feedback sound
+
+Each audio asset stored as base64 in chrome.storage.local.
+Include per-track volume sliders (0–100) and a master mute toggle.
+Include a "Reset to Default" button per asset.
+
+---
+
+## TECHNICAL REQUIREMENTS
+
+Manifest V3 (manifest.json):
+- content_scripts targeting *://*.facebook.com/*
+- storage permission for asset persistence
+- action popup pointing to popup.html
+
+File structure to produce:
+
+duck-pond-extension/
+├── manifest.json
+├── content.js                  # Injects canvas, runs game loop
+├── game/
+│   ├── duck.js                 # Duck entity, pathfinding, animation
+│   ├── pond.js                 # Pond rendering, ripples
+│   ├── breadcrumb.js           # Crumb spawning and lifecycle
+│   ├── particles.js            # Splash/ripple particle system
+│   └── assetLoader.js          # Loads defaults or custom base64 assets from storage
+├── popup/
+│   ├── popup.html
+│   ├── popup.js                # Tab switching, file upload to base64 to storage
+│   └── popup.css
+└── assets/
+    ├── duck.png
+    ├── pond.png
+    ├── breadcrumb.png
+    ├── background.png
+    ├── title.png
+    └── audio/
+        ├── music.mp3
+        ├── ambient.mp3
+        ├── quack.mp3
+        ├── splash.mp3
+        └── click.mp3
+
+**Asset Loading Pattern:**
+On game init, assetLoader.js checks chrome.storage.local for each asset key.
+If a custom base64 value exists, use it; otherwise fall back to the bundled default in /assets/.
+
+**Audio:**
+Use the Web Audio API. All audio nodes must respect per-track volume and master mute settings stored in chrome.storage.local.
+
+---
+
+## UI / UX DETAILS
+
+- The popup should be 380px wide, clean and minimal, with a duck/pond theme (soft greens and blues)
+- Each asset slot shows a small live preview of the currently active asset
+- Tab bar with a Graphics tab and an Audio tab
+- The in-page game overlay should have a small "Duck Pond" title bar above the canvas with a subtle shadow
+- Add a small "Hide / Show" toggle button so users can temporarily collapse the game and see the original feed
+
+---
+
+## DEFAULT ASSETS
+
+For defaults, generate or use simple placeholder canvas-drawn graphics (drawn procedurally in JS) so the extension works out of the box with zero uploaded assets. Use:
+- A drawn oval blue pond with a radial gradient effect
+- A simple yellow circle with an orange triangle beak as the duck
+- Brown dots as breadcrumbs
+- Green fill as the background
+
+This way the extension is fully functional with no asset uploads required.
+
+---
+
+## DELIVERY
+
+Produce every file in full. Do not use placeholders or TODOs. The extension should be immediately loadable in Chrome via chrome://extensions with "Load unpacked" — no build step required.
