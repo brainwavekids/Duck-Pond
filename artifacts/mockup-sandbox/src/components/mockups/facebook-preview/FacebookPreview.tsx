@@ -343,8 +343,20 @@ class PondGame {
 
     // Move + pond boundary
     let nx = this.duckX + this.duckVx * dt; let ny = this.duckY + this.duckVy * dt;
-    if (((nx - this.cx) / (this.rx - 16)) ** 2 + ((ny - this.cy) / (this.ry - 16)) ** 2 > 1) {
-      nx = this.duckX; ny = this.duckY; this.duckVx *= -0.3; this.duckVy *= -0.3; this.newWanderTarget();
+    const margin = 20;
+    const ex = (nx - this.cx) / (this.rx - margin);
+    const ey = (ny - this.cy) / (this.ry - margin);
+    const d2 = ex * ex + ey * ey;
+    if (d2 > 1) {
+      const len = Math.sqrt(d2);
+      // Clamp back inside the ellipse
+      nx = this.cx + (ex / len) * (this.rx - margin - 1);
+      ny = this.cy + (ey / len) * (this.ry - margin - 1);
+      // Reflect velocity off the outward normal (only if moving outward)
+      const normX = ex / len; const normY = ey / len;
+      const dot = this.duckVx * normX + this.duckVy * normY;
+      if (dot > 0) { this.duckVx -= 1.8 * dot * normX; this.duckVy -= 1.8 * dot * normY; }
+      this.newWanderTarget();
     }
     this.duckX = nx; this.duckY = ny;
 
