@@ -404,11 +404,6 @@ class PondGame {
     });
     ctx.restore();
 
-    // Shore vignette
-    ctx.save();
-    const sv = ctx.createRadialGradient(this.cx, this.cy, Math.max(this.rx, this.ry) * 0.84, this.cx, this.cy, Math.max(this.rx, this.ry) * 1.1);
-    sv.addColorStop(0, "rgba(0,0,0,0)"); sv.addColorStop(1, "rgba(60,110,30,0.55)");
-    ctx.fillStyle = sv; ctx.beginPath(); ctx.ellipse(this.cx, this.cy, this.rx + 14, this.ry + 14, 0, 0, TWO_PI); ctx.fill(); ctx.restore();
 
     // Crumbs
     this.crumbs.forEach(c => {
