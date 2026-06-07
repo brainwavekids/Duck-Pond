@@ -374,16 +374,11 @@ class PondGame {
     const eatScale = this.eating ? 1 + 0.15 * Math.sin((this.eatTimer / 0.45) * Math.PI) : 1;
     const ds = 40 * eatScale;
 
-    const cosA = Math.cos(this.duckFacingAngle);
-    const sinA = Math.sin(this.duckFacingAngle);
-    const facingRight = cosA >= 0;
-    const rawLocalTilt = facingRight ? Math.atan2(sinA, cosA) : Math.atan2(sinA, -cosA);
-    const localTilt = Math.max(-MAX_DISPLAY_TILT, Math.min(MAX_DISPLAY_TILT, rawLocalTilt));
+    const facingRight = Math.cos(this.duckFacingAngle) >= 0;
 
     ctx.save();
     ctx.translate(this.duckX, this.duckY + bob);
     if (!facingRight) ctx.scale(-1, 1);
-    ctx.rotate(facingRight ? localTilt : -localTilt);
     ctx.drawImage(this.duckImg, -ds / 2, -ds / 2, ds, ds);
     ctx.restore();
 
