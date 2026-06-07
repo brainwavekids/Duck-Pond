@@ -453,7 +453,6 @@ export default function App() {
   const ambientBufRef = useRef<AudioBuffer | null>(null);
   const audioRestoredRef = useRef(false);
 
-  const [gameVisible, setGameVisible] = useState(true);
   const [crumbHint, setCrumbHint] = useState(true);
   const [assetOpen, setAssetOpen] = useState(false);
   const [assetTab, setAssetTab] = useState<"graphics" | "audio">("graphics");
@@ -795,22 +794,15 @@ export default function App() {
                 <div className="font-semibold text-gray-900 text-sm">Duck Pond</div>
                 <div className="text-xs text-gray-400">Live · Click to feed the duck!</div>
               </div>
-              <div className="ml-auto flex gap-2">
-                <button onClick={() => { setGameVisible(v => !v); }} className="text-xs px-3 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors">
-                  {gameVisible ? "Hide 🙈" : "Show 🦆"}
-                </button>
-              </div>
             </div>
-            {gameVisible && (
-              <div className="relative">
-                <canvas ref={canvasRef} width={560} height={340} className="w-full block cursor-crosshair" onClick={handleCanvasClick} />
-                {crumbHint && (
-                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none">
-                    🍞 Click on the pond to feed the duck
-                  </div>
-                )}
-              </div>
-            )}
+            <div className="relative">
+              <canvas ref={canvasRef} width={560} height={340} className="w-full block cursor-crosshair" onClick={handleCanvasClick} />
+              {crumbHint && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs px-3 py-1.5 rounded-full pointer-events-none">
+                  🍞 Click on the pond to feed the duck
+                </div>
+              )}
+            </div>
             <div className="px-4 py-2 flex gap-1 border-t border-gray-100">
               {["👍 Like", "💬 Comment", "↗️ Share"].map(a => (
                 <button key={a} className="flex-1 py-1.5 rounded-lg hover:bg-[#f0f2f5] text-sm text-gray-500 font-medium transition-colors">{a}</button>

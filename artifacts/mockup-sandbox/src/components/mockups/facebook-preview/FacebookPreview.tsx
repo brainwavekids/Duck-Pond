@@ -487,7 +487,6 @@ export function FacebookPreview() {
   const musicBufRef = useRef<AudioBuffer | null>(null);
   const ambientBufRef = useRef<AudioBuffer | null>(null);
 
-  const [gameVisible, setGameVisible] = useState(true);
   const [crumbHint, setCrumbHint] = useState(true);
   const [assetOpen, setAssetOpen] = useState(false);
   const [assetTab, setAssetTab] = useState<"graphics" | "audio">("graphics");
@@ -810,17 +809,10 @@ export function FacebookPreview() {
                 >
                   🎨 Assets
                 </button>
-                <button
-                  onClick={() => setGameVisible(v => !v)}
-                  className="text-xs bg-white/10 hover:bg-white/20 border border-white/20 text-[#c8e6a0] px-3 py-1 rounded-md transition-colors"
-                >
-                  {gameVisible ? "Hide" : "Show"}
-                </button>
               </div>
             </div>
 
-            {gameVisible && (
-              <div className="relative">
+            <div className="relative">
                 {/* Game canvas */}
                 <canvas
                   ref={canvasRef}
@@ -945,7 +937,6 @@ export function FacebookPreview() {
                   </div>
                 )}
               </div>
-            )}
           </div>
 
           {/* Composer */}
