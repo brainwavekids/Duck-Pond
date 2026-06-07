@@ -152,6 +152,13 @@ class PondGame {
   }
 
   spawnCrumbs(cx: number, cy: number) {
+    const MARGIN = 32;
+    const srx = this.rx - MARGIN; const sry = this.ry - MARGIN;
+    const inSafe = (x: number, y: number) => ((x - this.cx) / srx) ** 2 + ((y - this.cy) / sry) ** 2 <= 1;
+    // Clamp click centre to safe inner ellipse so crumbs never land near the wall
+    const dx = cx - this.cx; const dy = cy - this.cy;
+    const dist = Math.sqrt((dx / srx) ** 2 + (dy / sry) ** 2);
+    if (dist > 1) { const s = 1 / dist; cx = this.cx + dx * s; cy = this.cy + dy * s; }
     const count = 3 + Math.floor(Math.random() * 3);
     let spawned = 0; let attempts = 0;
     while (spawned < count && attempts < count * 8) {
@@ -159,13 +166,13 @@ class PondGame {
       const a = Math.random() * TWO_PI; const spread = 22 + Math.random() * 16;
       const x = cx + Math.cos(a) * spread * Math.random();
       const y = cy + Math.sin(a) * spread * 0.55 * Math.random();
-      if (this.inPond(x, y)) {
+      if (inSafe(x, y)) {
         this.crumbs.push({ x, y, baseY: y, bobT: Math.random() * TWO_PI, bobS: 1.8 + Math.random() * 0.7, bobA: 1.5 + Math.random() * 1.2, angle: Math.random() * TWO_PI, spin: (Math.random() - 0.5) * 0.8, size: 10 + Math.random() * 4, dead: false, landT: 0, landed: false });
         for (let i = 0; i < 2; i++) this.particles.push(new Particle(x, y, "crumb_ripple"));
         spawned++;
       }
     }
-    if (spawned === 0 && this.inPond(cx, cy)) {
+    if (spawned === 0) {
       this.crumbs.push({ x: cx, y: cy, baseY: cy, bobT: 0, bobS: 2, bobA: 1.5, angle: 0, spin: 0.3, size: 12, dead: false, landT: 0, landed: false });
       this.particles.push(new Particle(cx, cy, "crumb_ripple"));
     }
