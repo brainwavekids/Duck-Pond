@@ -117,6 +117,7 @@ class PondGame {
   crumbs: { x: number; y: number; baseY: number; bobT: number; bobS: number; bobA: number; angle: number; spin: number; size: number; dead: boolean; landT: number; landed: boolean }[] = [];
   particles: Particle[] = [];
   bgPattern: CanvasPattern | null = null;
+  cursorTarget: { x: number; y: number } | null = null;
   time = 0;
   duckImg: HTMLImageElement; pondImg: HTMLImageElement; crumbImg: HTMLImageElement;
 
@@ -279,6 +280,11 @@ class PondGame {
         if (this.wanderTimer >= this.wanderInterval) {
           this.wanderTimer = 0; this.wanderInterval = 2.5 + Math.random() * 3;
           this.newWanderTarget();
+        }
+        // Softly blend wander target toward cursor while hovering over panel
+        if (this.cursorTarget) {
+          this.wanderTarget.x += (this.cursorTarget.x - this.wanderTarget.x) * 0.55 * dt;
+          this.wanderTarget.y += (this.cursorTarget.y - this.wanderTarget.y) * 0.55 * dt;
         }
         tx = this.wanderTarget.x; ty = this.wanderTarget.y;
         if (Math.hypot(tx - this.duckX, ty - this.duckY) < 8) this.wanderTimer = this.wanderInterval;
@@ -566,6 +572,23 @@ export default function App() {
     }
   }, [ensureAudioCtx, startLoop, volumes.music, volumes.ambient]);
 
+  const handlePageMouseMove = useCallback((e: React.MouseEvent) => {
+    const game = gameRef.current; const canvas = canvasRef.current;
+    if (!game || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width; const scaleY = canvas.height / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX; const cy = (e.clientY - rect.top) * scaleY;
+    const MARGIN = 40; const srx = game.rx - MARGIN; const sry = game.ry - MARGIN;
+    const ddx = cx - game.cx; const ddy = cy - game.cy;
+    const dist = Math.sqrt((ddx / srx) ** 2 + (ddy / sry) ** 2);
+    const s = dist > 1 ? 1 / dist : 1;
+    game.cursorTarget = { x: game.cx + ddx * s, y: game.cy + ddy * s };
+  }, []);
+
+  const handlePageMouseLeave = useCallback(() => {
+    if (gameRef.current) gameRef.current.cursorTarget = null;
+  }, []);
+
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current; const game = gameRef.current;
     if (!canvas || !game) return;
@@ -671,7 +694,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f0f2f5]">
+    <div className="min-h-screen bg-[#f0f2f5]" onMouseMove={handlePageMouseMove} onMouseLeave={handlePageMouseLeave}>
       {/* ── Nav ── */}
       <nav className="fixed top-0 left-0 right-0 z-40 bg-white shadow-sm h-14 flex items-center px-4 gap-2">
         <div className="text-[#1877f2] font-bold text-2xl select-none">🦆pondbook</div>
